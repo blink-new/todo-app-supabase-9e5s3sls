@@ -10,11 +10,21 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { toast } from 'sonner'
-import { Loader2, Trash2, Calendar as CalendarIcon, Filter, Sparkles } from 'lucide-react'
+import { Loader2, Trash2, Calendar as CalendarIcon, Filter, Sparkles, Tag } from 'lucide-react'
 import { format } from 'date-fns'
+import { Badge } from '@/components/ui/badge'
 
 const CATEGORIES = ['personal', 'work', 'shopping', 'health', 'other'] as const
 type Category = typeof CATEGORIES[number]
+
+// Category colors for visual distinction
+const CATEGORY_COLORS: Record<Category, string> = {
+  personal: 'bg-blue-100 text-blue-800',
+  work: 'bg-purple-100 text-purple-800',
+  shopping: 'bg-green-100 text-green-800',
+  health: 'bg-red-100 text-red-800',
+  other: 'bg-gray-100 text-gray-800',
+}
 
 export function TodoList() {
   const [todos, setTodos] = useState<Todo[]>([])
@@ -25,6 +35,7 @@ export function TodoList() {
   const [filterCategory, setFilterCategory] = useState<Category | 'all'>('all')
   const [isCategorizing, setIsCategorizing] = useState(false)
   const [useAI, setUseAI] = useState(true)
+  const [suggestedCategory, setSuggestedCategory] = useState<Category | null>(null)
 
   useEffect(() => {
     fetchTodos()
@@ -76,6 +87,34 @@ export function TodoList() {
     }
   }
 
+  // Preview categorization as user types
+  useEffect(() => {
+    const previewCategory = async () => {
+      if (!newTodo.trim() || !useAI) {
+        setSuggestedCategory(null)
+        return
+      }
+      
+      // Debounce to avoid too many API calls
+      const handler = setTimeout(async () => {
+        setIsCategorizing(true)
+        try {
+          const category = await categorizeTodo(newTodo.trim()) as Category
+          setSuggestedCategory(category)
+        } catch (error) {
+          console.error('Error previewing category:', error)
+          setSuggestedCategory(null)
+        } finally {
+          setIsCategorizing(false)
+        }
+      }, 500) // 500ms debounce
+      
+      return () => clearTimeout(handler)
+    }
+    
+    previewCategory()
+  }, [newTodo, useAI])
+
   const addTodo = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!newTodo.trim()) return
@@ -84,19 +123,25 @@ export function TodoList() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No user found')
 
-      let category = selectedCategory
+      // Use suggested category if available, otherwise use selected or get a new one
+      let category: Category
       
-      // Use AI to categorize if enabled
       if (useAI) {
-        setIsCategorizing(true)
-        try {
-          category = await categorizeTodo(newTodo.trim()) as Category
-        } catch (error) {
-          console.error('Error categorizing:', error)
-          // Fall back to selected category if AI fails
-        } finally {
-          setIsCategorizing(false)
+        if (suggestedCategory) {
+          category = suggestedCategory
+        } else {
+          setIsCategorizing(true)
+          try {
+            category = await categorizeTodo(newTodo.trim()) as Category
+          } catch (error) {
+            console.error('Error categorizing:', error)
+            category = selectedCategory // Fall back to selected category if AI fails
+          } finally {
+            setIsCategorizing(false)
+          }
         }
+      } else {
+        category = selectedCategory
       }
 
       // Create optimistic todo
@@ -114,6 +159,7 @@ export function TodoList() {
       setTodos(current => [...current, optimisticTodo])
       setNewTodo('')
       setSelectedDate(null)
+      setSuggestedCategory(null)
 
       // Make API call
       const { data, error } = await supabase
@@ -236,6 +282,16 @@ export function TodoList() {
           </Button>
         </div>
 
+        {useAI && suggestedCategory && newTodo.trim() && (
+          <div className="flex items-center gap-2 text-sm">
+            <Tag className="h-3.5 w-3.5 text-gray-500" />
+            <span>AI suggests category:</span>
+            <Badge variant="outline" className={`${CATEGORY_COLORS[suggestedCategory]} capitalize`}>
+              {suggestedCategory}
+            </Badge>
+          </div>
+        )}
+
         <div className="flex flex-wrap gap-2">
           <div className="flex items-center">
             <Button
@@ -319,13 +375,14 @@ export function TodoList() {
                   <span className={todo.is_complete ? 'text-gray-400 line-through' : ''}>
                     {todo.title}
                   </span>
-                  <div className="flex items-center gap-2 text-sm text-gray-500">
-                    <span className="capitalize">{todo.category}</span>
+                  <div className="flex items-center gap-2 text-sm">
+                    <Badge variant="outline" className={`${CATEGORY_COLORS[todo.category]} capitalize`}>
+                      {todo.category}
+                    </Badge>
                     {todo.due_date && (
-                      <>
-                        <span>•</span>
-                        <span>{format(new Date(todo.due_date), 'PPP')}</span>
-                      </>
+                      <span className="text-gray-500">
+                        {format(new Date(todo.due_date), 'PPP')}
+                      </span>
                     )}
                   </div>
                 </div>
