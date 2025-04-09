@@ -1,7 +1,7 @@
 
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts'
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
-import { Configuration, OpenAIApi } from 'https://esm.sh/openai@3.2.1'
+import OpenAI from 'https://esm.sh/openai@4.20.1'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,23 +32,32 @@ serve(async (req) => {
     )
 
     // Initialize OpenAI
-    const configuration = new Configuration({
+    const openai = new OpenAI({
       apiKey: Deno.env.get('OPENAI_API_KEY'),
     })
-    const openai = new OpenAIApi(configuration)
+
+    // Define valid categories
+    const categories = ['personal', 'work', 'shopping', 'health', 'other']
 
     // Call OpenAI to categorize the todo
-    const categories = ['personal', 'work', 'shopping', 'health', 'other']
-    const prompt = `Categorize the following todo item into one of these categories: ${categories.join(', ')}.\n\nTodo: "${title}"\n\nCategory:`
-
-    const completion = await openai.createCompletion({
-      model: "gpt-3.5-turbo-instruct",
-      prompt,
-      max_tokens: 10,
+    const response = await openai.chat.completions.create({
+      model: "gpt-3.5-turbo",
+      messages: [
+        {
+          role: "system",
+          content: `You are a task categorization assistant. Categorize tasks into exactly one of these categories: ${categories.join(', ')}. Respond with only the category name, lowercase, no explanation.`
+        },
+        {
+          role: "user",
+          content: `Categorize this task: "${title}"`
+        }
+      ],
       temperature: 0.3,
+      max_tokens: 10,
     })
 
-    let category = completion.data.choices[0].text?.trim().toLowerCase() || 'other'
+    // Extract the category from the response
+    let category = response.choices[0]?.message?.content?.trim().toLowerCase() || 'other'
     
     // Ensure the category is one of our valid categories
     if (!categories.includes(category)) {
