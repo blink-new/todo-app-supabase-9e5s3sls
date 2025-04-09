@@ -8,7 +8,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 }
 
-// Valid time estimates
+// Valid time estimates - using the exact ranges specified
 const TIME_ESTIMATES = [
   '5min', '10min', '15min', '20min', '30min', '45min', 
   '1hr', '1.5hrs', '2hrs', '2.5hrs', '3hrs', '4hrs', '5hrs', 
@@ -54,7 +54,14 @@ serve(async (req) => {
       messages: [
         {
           role: "system",
-          content: `You are a task time estimation assistant. Estimate how long a task will take using ONLY one of these time ranges: ${TIME_ESTIMATES.join(', ')}. Respond with only the time estimate, no explanation.`
+          content: `You are a task time estimation assistant. Your job is to estimate how long a task will take based on its description.
+          
+You MUST choose ONLY ONE of these specific time ranges:
+- 5min, 10min, 15min, 20min, 30min, 45min (for short tasks)
+- 1hr, 1.5hrs, 2hrs, 2.5hrs, 3hrs, 4hrs, 5hrs (for medium tasks)
+- 6hrs, 8hrs, 1day, 2days, 3days, 1week (for long tasks)
+
+Respond with ONLY the time estimate, no explanation or additional text.`
         },
         {
           role: "user",
@@ -69,20 +76,21 @@ serve(async (req) => {
     let timeEstimate = response.choices[0]?.message?.content?.trim().toLowerCase() || '30min'
     
     // Normalize the response to match our valid time estimates
-    // First try exact match
     if (!TIME_ESTIMATES.includes(timeEstimate)) {
       // Try to match with some common variations
       if (timeEstimate.includes('hour') || timeEstimate.includes('hr')) {
-        if (timeEstimate.includes('1')) timeEstimate = '1hr'
+        if (timeEstimate.includes('1') && !timeEstimate.includes('1.5')) timeEstimate = '1hr'
         else if (timeEstimate.includes('1.5') || timeEstimate.includes('1 and a half')) timeEstimate = '1.5hrs'
-        else if (timeEstimate.includes('2')) timeEstimate = '2hrs'
+        else if (timeEstimate.includes('2') && !timeEstimate.includes('2.5')) timeEstimate = '2hrs'
         else if (timeEstimate.includes('2.5') || timeEstimate.includes('2 and a half')) timeEstimate = '2.5hrs'
         else if (timeEstimate.includes('3')) timeEstimate = '3hrs'
         else if (timeEstimate.includes('4')) timeEstimate = '4hrs'
         else if (timeEstimate.includes('5')) timeEstimate = '5hrs'
+        else if (timeEstimate.includes('6')) timeEstimate = '6hrs'
+        else if (timeEstimate.includes('8')) timeEstimate = '8hrs'
         else timeEstimate = '1hr'
       } else if (timeEstimate.includes('min')) {
-        if (timeEstimate.includes('5')) timeEstimate = '5min'
+        if (timeEstimate.includes('5') && !timeEstimate.includes('15') && !timeEstimate.includes('45')) timeEstimate = '5min'
         else if (timeEstimate.includes('10')) timeEstimate = '10min'
         else if (timeEstimate.includes('15')) timeEstimate = '15min'
         else if (timeEstimate.includes('20')) timeEstimate = '20min'
@@ -90,7 +98,7 @@ serve(async (req) => {
         else if (timeEstimate.includes('45')) timeEstimate = '45min'
         else timeEstimate = '30min'
       } else if (timeEstimate.includes('day')) {
-        if (timeEstimate.includes('1')) timeEstimate = '1day'
+        if (timeEstimate.includes('1') && !timeEstimate.includes('2') && !timeEstimate.includes('3')) timeEstimate = '1day'
         else if (timeEstimate.includes('2')) timeEstimate = '2days'
         else if (timeEstimate.includes('3')) timeEstimate = '3days'
         else timeEstimate = '1day'
