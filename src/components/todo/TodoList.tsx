@@ -1,7 +1,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
-import { categorizeTodo } from '@/lib/api'
+import { categorizeTodo, estimateTime } from '@/lib/api'
 import type { Todo } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -10,12 +10,20 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { toast } from 'sonner'
-import { Loader2, Trash2, Calendar as CalendarIcon, Filter, Sparkles, Tag } from 'lucide-react'
+import { Loader2, Trash2, Calendar as CalendarIcon, Filter, Sparkles, Tag, Clock } from 'lucide-react'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 
 const CATEGORIES = ['personal', 'work', 'shopping', 'health', 'other'] as const
 type Category = typeof CATEGORIES[number]
+
+// Time estimates
+const TIME_ESTIMATES = [
+  '5min', '10min', '15min', '20min', '30min', '45min', 
+  '1hr', '1.5hrs', '2hrs', '2.5hrs', '3hrs', '4hrs', '5hrs', 
+  '6hrs', '8hrs', '1day', '2days', '3days', '1week'
+] as const
+type TimeEstimate = typeof TIME_ESTIMATES[number]
 
 // Category colors for visual distinction
 const CATEGORY_COLORS: Record<Category, string> = {
@@ -26,19 +34,36 @@ const CATEGORY_COLORS: Record<Category, string> = {
   other: 'bg-gray-100 text-gray-800',
 }
 
+// Time estimate colors based on duration
+const getTimeEstimateColor = (estimate: string): string => {
+  if (estimate.includes('min') || estimate === '1hr') {
+    return 'bg-green-100 text-green-800'; // Short tasks
+  } else if (['1.5hrs', '2hrs', '2.5hrs', '3hrs'].includes(estimate)) {
+    return 'bg-yellow-100 text-yellow-800'; // Medium tasks
+  } else if (['4hrs', '5hrs', '6hrs', '8hrs'].includes(estimate)) {
+    return 'bg-orange-100 text-orange-800'; // Long tasks
+  } else {
+    return 'bg-red-100 text-red-800'; // Very long tasks (days/week)
+  }
+};
+
 export function TodoList() {
   const [todos, setTodos] = useState<Todo[]>([])
   const [newTodo, setNewTodo] = useState('')
   const [loading, setLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState<Category>('personal')
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [selectedTimeEstimate, setSelectedTimeEstimate] = useState<TimeEstimate>('30min')
   const [filterCategory, setFilterCategory] = useState<Category | 'all'>('all')
   const [isCategorizing, setIsCategorizing] = useState(false)
+  const [isEstimating, setIsEstimating] = useState(false)
   const [useAI, setUseAI] = useState(true)
   const [suggestedCategory, setSuggestedCategory] = useState<Category | null>(null)
+  const [suggestedTimeEstimate, setSuggestedTimeEstimate] = useState<TimeEstimate | null>(null)
   
   // Debounce timer reference
   const debounceTimerRef = useRef<number | null>(null)
+  const timeEstimateTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     fetchTodos()
@@ -118,14 +143,46 @@ export function TodoList() {
     }, 800) // 800ms debounce
   }
 
-  // Call debounced function when todo text changes
+  // Debounced function to get time estimates
+  const debouncedGetTimeEstimate = (todoText: string) => {
+    // Clear any existing timer
+    if (timeEstimateTimerRef.current) {
+      window.clearTimeout(timeEstimateTimerRef.current)
+    }
+
+    // Only proceed if we have text and AI is enabled
+    if (!todoText.trim() || !useAI) {
+      setSuggestedTimeEstimate(null)
+      return
+    }
+
+    // Set a new timer
+    timeEstimateTimerRef.current = window.setTimeout(async () => {
+      setIsEstimating(true)
+      try {
+        const timeEstimate = await estimateTime(todoText.trim()) as TimeEstimate
+        setSuggestedTimeEstimate(timeEstimate)
+      } catch (error) {
+        console.error('Error estimating time:', error)
+        setSuggestedTimeEstimate(null)
+      } finally {
+        setIsEstimating(false)
+      }
+    }, 1000) // 1000ms debounce
+  }
+
+  // Call debounced functions when todo text changes
   useEffect(() => {
     debouncedGetSuggestion(newTodo)
+    debouncedGetTimeEstimate(newTodo)
     
-    // Cleanup function to clear timer if component unmounts or newTodo changes again
+    // Cleanup function to clear timers if component unmounts or newTodo changes again
     return () => {
       if (debounceTimerRef.current) {
         window.clearTimeout(debounceTimerRef.current)
+      }
+      if (timeEstimateTimerRef.current) {
+        window.clearTimeout(timeEstimateTimerRef.current)
       }
     }
   }, [newTodo, useAI])
@@ -140,8 +197,10 @@ export function TodoList() {
 
       // Use suggested category if available, otherwise use selected or get a new one
       let category: Category
+      let timeEstimate: TimeEstimate
       
       if (useAI) {
+        // Handle category
         if (suggestedCategory) {
           category = suggestedCategory
         } else {
@@ -155,8 +214,24 @@ export function TodoList() {
             setIsCategorizing(false)
           }
         }
+
+        // Handle time estimate
+        if (suggestedTimeEstimate) {
+          timeEstimate = suggestedTimeEstimate
+        } else {
+          setIsEstimating(true)
+          try {
+            timeEstimate = await estimateTime(newTodo.trim()) as TimeEstimate
+          } catch (error) {
+            console.error('Error estimating time:', error)
+            timeEstimate = selectedTimeEstimate // Fall back to selected time if AI fails
+          } finally {
+            setIsEstimating(false)
+          }
+        }
       } else {
         category = selectedCategory
+        timeEstimate = selectedTimeEstimate
       }
 
       // Create optimistic todo
@@ -165,6 +240,7 @@ export function TodoList() {
         title: newTodo.trim(),
         user_id: user.id,
         category,
+        time_estimate: timeEstimate,
         due_date: selectedDate?.toISOString() || null,
         is_complete: false,
         created_at: new Date().toISOString(),
@@ -175,6 +251,7 @@ export function TodoList() {
       setNewTodo('')
       setSelectedDate(null)
       setSuggestedCategory(null)
+      setSuggestedTimeEstimate(null)
 
       // Make API call
       const { data, error } = await supabase
@@ -183,6 +260,7 @@ export function TodoList() {
           title: optimisticTodo.title, 
           user_id: optimisticTodo.user_id,
           category: optimisticTodo.category,
+          time_estimate: optimisticTodo.time_estimate,
           due_date: optimisticTodo.due_date
         }])
         .select()
@@ -198,7 +276,7 @@ export function TodoList() {
       )
 
       if (useAI) {
-        toast.success(`Todo added! AI categorized as: ${category}`)
+        toast.success(`Todo added! AI categorized as: ${category} (${timeEstimate})`)
       } else {
         toast.success('Todo added!')
       }
@@ -290,22 +368,34 @@ export function TodoList() {
             onChange={(e) => setNewTodo(e.target.value)}
             placeholder="Add a new todo..."
             className="flex-1"
-            disabled={isCategorizing}
+            disabled={isCategorizing || isEstimating}
           />
-          <Button type="submit" disabled={isCategorizing || !newTodo.trim()}>
-            {isCategorizing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}
+          <Button type="submit" disabled={isCategorizing || isEstimating || !newTodo.trim()}>
+            {isCategorizing || isEstimating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}
           </Button>
         </div>
 
-        {useAI && suggestedCategory && newTodo.trim() && (
-          <div className="flex items-center gap-2 text-sm">
-            <Tag className="h-3.5 w-3.5 text-gray-500" />
-            <span>AI suggests category:</span>
-            <Badge variant="outline" className={`${CATEGORY_COLORS[suggestedCategory]} capitalize`}>
-              {suggestedCategory}
-            </Badge>
-          </div>
-        )}
+        <div className="flex flex-col gap-2">
+          {useAI && suggestedCategory && newTodo.trim() && (
+            <div className="flex items-center gap-2 text-sm">
+              <Tag className="h-3.5 w-3.5 text-gray-500" />
+              <span>AI suggests category:</span>
+              <Badge variant="outline" className={`${CATEGORY_COLORS[suggestedCategory]} capitalize`}>
+                {suggestedCategory}
+              </Badge>
+            </div>
+          )}
+
+          {useAI && suggestedTimeEstimate && newTodo.trim() && (
+            <div className="flex items-center gap-2 text-sm">
+              <Clock className="h-3.5 w-3.5 text-gray-500" />
+              <span>AI estimates time:</span>
+              <Badge variant="outline" className={`${getTimeEstimateColor(suggestedTimeEstimate)}`}>
+                {suggestedTimeEstimate}
+              </Badge>
+            </div>
+          )}
+        </div>
 
         <div className="flex flex-wrap gap-2">
           <div className="flex items-center">
@@ -317,23 +407,38 @@ export function TodoList() {
               onClick={() => setUseAI(!useAI)}
             >
               <Sparkles className="h-3.5 w-3.5" />
-              {useAI ? 'AI Categorization On' : 'AI Categorization Off'}
+              {useAI ? 'AI Assistance On' : 'AI Assistance Off'}
             </Button>
           </div>
 
           {!useAI && (
-            <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as Category)}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Category" />
-              </SelectTrigger>
-              <SelectContent>
-                {CATEGORIES.map(category => (
-                  <SelectItem key={category} value={category} className="capitalize">
-                    {category}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <>
+              <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as Category)}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Category" />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map(category => (
+                    <SelectItem key={category} value={category} className="capitalize">
+                      {category}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              <Select value={selectedTimeEstimate} onValueChange={(value) => setSelectedTimeEstimate(value as TimeEstimate)}>
+                <SelectTrigger className="w-[150px]">
+                  <SelectValue placeholder="Time Estimate" />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIME_ESTIMATES.map(time => (
+                    <SelectItem key={time} value={time}>
+                      {time}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </>
           )}
 
           <Popover>
@@ -390,10 +495,15 @@ export function TodoList() {
                   <span className={todo.is_complete ? 'text-gray-400 line-through' : ''}>
                     {todo.title}
                   </span>
-                  <div className="flex items-center gap-2 text-sm">
+                  <div className="flex flex-wrap items-center gap-2 text-sm">
                     <Badge variant="outline" className={`${CATEGORY_COLORS[todo.category]} capitalize`}>
                       {todo.category}
                     </Badge>
+                    {todo.time_estimate && (
+                      <Badge variant="outline" className={`${getTimeEstimateColor(todo.time_estimate)}`}>
+                        {todo.time_estimate}
+                      </Badge>
+                    )}
                     {todo.due_date && (
                       <span className="text-gray-500">
                         {format(new Date(todo.due_date), 'PPP')}
