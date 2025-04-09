@@ -5,14 +5,31 @@ import { categorizeTodo, estimateTime } from '@/lib/api'
 import type { Todo } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
-import { Checkbox } from '@/components/ui/checkbox'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Separator } from '@/components/ui/separator'
+import { Skeleton } from '@/components/ui/skeleton'
 import { toast } from 'sonner'
-import { Loader2, Trash2, Calendar as CalendarIcon, Filter, Sparkles, Tag, Clock, ArrowUpDown, ArrowDown, ArrowUp } from 'lucide-react'
+import { 
+  Loader2, 
+  Calendar as CalendarIcon, 
+  Filter, 
+  Sparkles, 
+  Tag, 
+  Clock, 
+  ArrowUpDown, 
+  ArrowDown, 
+  ArrowUp,
+  Plus,
+  CheckSquare,
+  XCircle
+} from 'lucide-react'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
+import { TodoItem } from '@/components/todo/TodoItem'
+import { motion, AnimatePresence } from 'framer-motion'
+import { cn } from '@/lib/utils'
 
 const CATEGORIES = ['personal', 'work', 'shopping', 'health', 'other'] as const
 type Category = typeof CATEGORIES[number]
@@ -30,23 +47,23 @@ type SortOrder = 'created_asc' | 'created_desc' | 'due_asc' | 'due_desc'
 
 // Category colors for visual distinction
 const CATEGORY_COLORS: Record<Category, string> = {
-  personal: 'bg-blue-100 text-blue-800',
-  work: 'bg-purple-100 text-purple-800',
-  shopping: 'bg-green-100 text-green-800',
-  health: 'bg-red-100 text-red-800',
-  other: 'bg-gray-100 text-gray-800',
+  personal: 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300',
+  work: 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300',
+  shopping: 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300',
+  health: 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300',
+  other: 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300',
 }
 
 // Time estimate colors based on duration
 const getTimeEstimateColor = (estimate: string): string => {
   if (estimate.includes('min') || estimate === '1hr') {
-    return 'bg-green-100 text-green-800'; // Short tasks
+    return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300'; // Short tasks
   } else if (['1.5hrs', '2hrs', '2.5hrs', '3hrs'].includes(estimate)) {
-    return 'bg-yellow-100 text-yellow-800'; // Medium tasks
+    return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-300'; // Medium tasks
   } else if (['4hrs', '5hrs', '6hrs', '8hrs'].includes(estimate)) {
-    return 'bg-orange-100 text-orange-800'; // Long tasks
+    return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-300'; // Long tasks
   } else {
-    return 'bg-red-100 text-red-800'; // Very long tasks (days/week)
+    return 'bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-300'; // Very long tasks (days/week)
   }
 };
 
@@ -64,6 +81,7 @@ export function TodoList() {
   const [useAI, setUseAI] = useState(true)
   const [suggestedCategory, setSuggestedCategory] = useState<Category | null>(null)
   const [suggestedTimeEstimate, setSuggestedTimeEstimate] = useState<TimeEstimate | null>(null)
+  const [isFormExpanded, setIsFormExpanded] = useState(false)
   
   // Debounce timer reference
   const debounceTimerRef = useRef<number | null>(null)
@@ -273,11 +291,12 @@ export function TodoList() {
       }
 
       // Optimistically update UI
-      setTodos(current => [...current, optimisticTodo!])
+      setTodos(current => [optimisticTodo!, ...current])
       setNewTodo('')
       setSelectedDate(null)
       setSuggestedCategory(null)
       setSuggestedTimeEstimate(null)
+      setIsFormExpanded(false)
 
       // Make API call - using insert directly without specifying columns
       const { data, error } = await supabase
@@ -316,32 +335,6 @@ export function TodoList() {
     }
   }
 
-  const toggleTodo = async (todo: Todo) => {
-    // Optimistically update UI
-    setTodos(current =>
-      current.map(t =>
-        t.id === todo.id ? { ...t, is_complete: !t.is_complete } : t
-      )
-    )
-
-    try {
-      const { error } = await supabase
-        .from('todos')
-        .update({ is_complete: !todo.is_complete })
-        .eq('id', todo.id)
-
-      if (error) throw error
-    } catch (error: any) {
-      // Revert optimistic update on error
-      setTodos(current =>
-        current.map(t =>
-          t.id === todo.id ? { ...t, is_complete: todo.is_complete } : t
-        )
-      )
-      toast.error('Error updating todo')
-    }
-  }
-
   const deleteTodo = async (id: string) => {
     // Store the todo for potential recovery
     const todoToDelete = todos.find(t => t.id === id)
@@ -366,11 +359,6 @@ export function TodoList() {
     }
   }
 
-  const handleSignOut = async () => {
-    const { error } = await supabase.auth.signOut()
-    if (error) toast.error('Error signing out')
-  }
-
   const filteredTodos = todos.filter(todo => 
     filterCategory === 'all' || todo.category === filterCategory
   )
@@ -389,121 +377,173 @@ export function TodoList() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+      <div className="space-y-4">
+        <div className="flex items-center justify-between">
+          <h1 className="text-2xl font-bold">My Todos</h1>
+        </div>
+        
+        <div className="rounded-lg border p-4 shadow-sm">
+          <Skeleton className="h-10 w-full mb-4" />
+          <div className="space-y-2">
+            <Skeleton className="h-4 w-1/3" />
+            <Skeleton className="h-4 w-1/2" />
+          </div>
+        </div>
+        
+        <div className="space-y-3">
+          {[1, 2, 3, 4].map((i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-lg" />
+          ))}
+        </div>
       </div>
     )
   }
 
   return (
-    <div className="mx-auto max-w-2xl p-4">
-      <div className="mb-8 flex items-center justify-between">
+    <div className="space-y-6">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <h1 className="text-2xl font-bold">My Todos</h1>
-        <Button variant="outline" onClick={handleSignOut}>Sign Out</Button>
-      </div>
-
-      <form onSubmit={addTodo} className="mb-6 space-y-4 rounded-lg border p-4 shadow-sm">
-        <div className="flex gap-2">
-          <Input
-            value={newTodo}
-            onChange={(e) => setNewTodo(e.target.value)}
-            placeholder="Add a new todo..."
-            className="flex-1"
-            disabled={isCategorizing || isEstimating}
-          />
-          <Button type="submit" disabled={isCategorizing || isEstimating || !newTodo.trim()}>
-            {isCategorizing || isEstimating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}
+        
+        <div className="flex items-center gap-2">
+          <Button 
+            onClick={() => setIsFormExpanded(!isFormExpanded)} 
+            variant={isFormExpanded ? "secondary" : "default"}
+            className="gap-1"
+          >
+            {isFormExpanded ? (
+              <>
+                <XCircle className="h-4 w-4" />
+                <span>Cancel</span>
+              </>
+            ) : (
+              <>
+                <Plus className="h-4 w-4" />
+                <span>New Todo</span>
+              </>
+            )}
           </Button>
         </div>
+      </div>
 
-        <div className="flex flex-col gap-2">
-          {useAI && suggestedCategory && newTodo.trim() && (
-            <div className="flex items-center gap-2 text-sm">
-              <Tag className="h-3.5 w-3.5 text-gray-500" />
-              <span>AI suggests category:</span>
-              <Badge variant="outline" className={`${CATEGORY_COLORS[suggestedCategory]} capitalize`}>
-                {suggestedCategory}
-              </Badge>
-            </div>
-          )}
+      <AnimatePresence>
+        {isFormExpanded && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.3 }}
+            className="overflow-hidden"
+          >
+            <form onSubmit={addTodo} className="rounded-lg border bg-card p-4 shadow-sm">
+              <div className="space-y-4">
+                <div className="flex gap-2">
+                  <Input
+                    value={newTodo}
+                    onChange={(e) => setNewTodo(e.target.value)}
+                    placeholder="What needs to be done?"
+                    className="flex-1"
+                    disabled={isCategorizing || isEstimating}
+                    autoFocus
+                  />
+                  <Button type="submit" disabled={isCategorizing || isEstimating || !newTodo.trim()}>
+                    {isCategorizing || isEstimating ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}
+                  </Button>
+                </div>
 
-          {useAI && suggestedTimeEstimate && newTodo.trim() && (
-            <div className="flex items-center gap-2 text-sm">
-              <Clock className="h-3.5 w-3.5 text-gray-500" />
-              <span>AI estimates time:</span>
-              <Badge variant="outline" className={`${getTimeEstimateColor(suggestedTimeEstimate)}`}>
-                {suggestedTimeEstimate}
-              </Badge>
-            </div>
-          )}
-        </div>
+                <div className="flex flex-col gap-2">
+                  {useAI && suggestedCategory && newTodo.trim() && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-muted-foreground">AI suggests category:</span>
+                      <Badge variant="outline" className={`${CATEGORY_COLORS[suggestedCategory]} capitalize`}>
+                        {suggestedCategory}
+                      </Badge>
+                    </div>
+                  )}
 
-        <div className="flex flex-wrap gap-2">
-          <div className="flex items-center">
-            <Button
-              type="button"
-              variant={useAI ? "default" : "outline"}
-              size="sm"
-              className="flex items-center gap-1"
-              onClick={() => setUseAI(!useAI)}
-            >
-              <Sparkles className="h-3.5 w-3.5" />
-              {useAI ? 'AI Assistance On' : 'AI Assistance Off'}
-            </Button>
-          </div>
+                  {useAI && suggestedTimeEstimate && newTodo.trim() && (
+                    <div className="flex items-center gap-2 text-sm">
+                      <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-muted-foreground">AI estimates time:</span>
+                      <Badge variant="outline" className={`${getTimeEstimateColor(suggestedTimeEstimate)}`}>
+                        {suggestedTimeEstimate}
+                      </Badge>
+                    </div>
+                  )}
+                </div>
 
-          {!useAI && (
-            <>
-              <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as Category)}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Category" />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map(category => (
-                    <SelectItem key={category} value={category} className="capitalize">
-                      {category}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <Separator />
 
-              <Select value={selectedTimeEstimate} onValueChange={(value) => setSelectedTimeEstimate(value as TimeEstimate)}>
-                <SelectTrigger className="w-[150px]">
-                  <SelectValue placeholder="Time Estimate" />
-                </SelectTrigger>
-                <SelectContent>
-                  {TIME_ESTIMATES.map(time => (
-                    <SelectItem key={time} value={time}>
-                      {time}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </>
-          )}
+                <div className="flex flex-wrap gap-3">
+                  <div className="flex items-center">
+                    <Button
+                      type="button"
+                      variant={useAI ? "default" : "outline"}
+                      size="sm"
+                      className="flex items-center gap-1"
+                      onClick={() => setUseAI(!useAI)}
+                    >
+                      <Sparkles className="h-3.5 w-3.5" />
+                      {useAI ? 'AI Assistance On' : 'AI Assistance Off'}
+                    </Button>
+                  </div>
 
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button variant="outline" className={selectedDate ? 'text-foreground' : 'text-muted-foreground'}>
-                <CalendarIcon className="mr-2 h-4 w-4" />
-                {selectedDate ? format(selectedDate, 'PPP') : 'Pick a due date'}
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-auto p-0">
-              <Calendar
-                mode="single"
-                selected={selectedDate}
-                onSelect={setSelectedDate}
-                initialFocus
-              />
-            </PopoverContent>
-          </Popover>
-        </div>
-      </form>
+                  {!useAI && (
+                    <>
+                      <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as Category)}>
+                        <SelectTrigger className="w-[150px]">
+                          <SelectValue placeholder="Category" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {CATEGORIES.map(category => (
+                            <SelectItem key={category} value={category} className="capitalize">
+                              {category}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
 
-      <div className="mb-4 flex items-center justify-between">
+                      <Select value={selectedTimeEstimate} onValueChange={(value) => setSelectedTimeEstimate(value as TimeEstimate)}>
+                        <SelectTrigger className="w-[150px]">
+                          <SelectValue placeholder="Time Estimate" />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {TIME_ESTIMATES.map(time => (
+                            <SelectItem key={time} value={time}>
+                              {time}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </>
+                  )}
+
+                  <Popover>
+                    <PopoverTrigger asChild>
+                      <Button variant="outline" className={selectedDate ? 'text-foreground' : 'text-muted-foreground'}>
+                        <CalendarIcon className="mr-2 h-4 w-4" />
+                        {selectedDate ? format(selectedDate, 'PPP') : 'Pick a due date'}
+                      </Button>
+                    </PopoverTrigger>
+                    <PopoverContent className="w-auto p-0">
+                      <Calendar
+                        mode="single"
+                        selected={selectedDate}
+                        onSelect={setSelectedDate}
+                        initialFocus
+                      />
+                    </PopoverContent>
+                  </Popover>
+                </div>
+              </div>
+            </form>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 rounded-lg border bg-card p-3">
         <div className="flex items-center gap-2">
-          <Filter className="h-4 w-4 text-gray-500" />
+          <Filter className="h-4 w-4 text-muted-foreground" />
           <Select value={filterCategory} onValueChange={(value) => setFilterCategory(value as Category | 'all')}>
             <SelectTrigger className="w-[180px]">
               <SelectValue placeholder="Filter by category" />
@@ -543,56 +583,49 @@ export function TodoList() {
         </div>
       </div>
 
-      <div className="space-y-2">
+      <AnimatePresence initial={false}>
         {filteredTodos.length === 0 ? (
-          <p className="text-center text-gray-500">No todos yet. Add one above!</p>
-        ) : (
-          filteredTodos.map((todo) => (
-            <div
-              key={todo.id}
-              className="flex items-center justify-between rounded-lg border p-4 transition-all hover:shadow-sm"
-            >
-              <div className="flex items-center gap-3">
-                <Checkbox
-                  checked={todo.is_complete}
-                  onCheckedChange={() => toggleTodo(todo)}
-                />
-                <div className="flex flex-col">
-                  <span className={todo.is_complete ? 'text-gray-400 line-through' : ''}>
-                    {todo.title}
-                  </span>
-                  <div className="flex flex-wrap items-center gap-2 text-sm">
-                    <Badge variant="outline" className={`${CATEGORY_COLORS[todo.category]} capitalize`}>
-                      {todo.category}
-                    </Badge>
-                    {todo.time_estimate && (
-                      <Badge variant="outline" className={`${getTimeEstimateColor(todo.time_estimate)}`}>
-                        {todo.time_estimate}
-                      </Badge>
-                    )}
-                    {todo.due_date && (
-                      <span className="text-gray-500">
-                        {format(new Date(todo.due_date), 'PPP')}
-                      </span>
-                    )}
-                    <span className="text-xs text-gray-400">
-                      Created: {format(new Date(todo.created_at), 'MMM d, yyyy')}
-                    </span>
-                  </div>
-                </div>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={() => deleteTodo(todo.id)}
-                className="text-red-500 hover:text-red-700"
+          <motion.div
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="flex flex-col items-center justify-center py-12 text-center"
+          >
+            <CheckSquare className="h-12 w-12 text-muted-foreground mb-4" />
+            <h3 className="text-xl font-medium">No todos yet</h3>
+            <p className="text-muted-foreground mt-2 max-w-md">
+              {isFormExpanded 
+                ? "Add your first todo using the form above" 
+                : "Click the 'New Todo' button to get started"}
+            </p>
+            {!isFormExpanded && (
+              <Button 
+                onClick={() => setIsFormExpanded(true)} 
+                className="mt-4"
+                variant="outline"
               >
-                <Trash2 className="h-4 w-4" />
+                <Plus className="h-4 w-4 mr-2" />
+                New Todo
               </Button>
-            </div>
-          ))
+            )}
+          </motion.div>
+        ) : (
+          <div className="space-y-3">
+            {filteredTodos.map((todo) => (
+              <motion.div
+                key={todo.id}
+                layout
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.2 }}
+              >
+                <TodoItem todo={todo} onDelete={deleteTodo} />
+              </motion.div>
+            ))}
+          </div>
         )}
-      </div>
+      </AnimatePresence>
     </div>
   )
 }

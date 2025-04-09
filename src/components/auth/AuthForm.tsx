@@ -1,136 +1,206 @@
 
 import { useState } from 'react'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Card } from '@/components/ui/card'
 import { supabase } from '@/lib/supabase'
+import { Input } from '@/components/ui/input'
+import { Button } from '@/components/ui/button'
+import { Label } from '@/components/ui/label'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Separator } from '@/components/ui/separator'
 import { toast } from 'sonner'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Mail, Lock, CheckSquare, Github } from 'lucide-react'
+import { motion } from 'framer-motion'
 
 export function AuthForm() {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
-  const [isSignUp, setIsSignUp] = useState(false)
+  const [view, setView] = useState<'sign-in' | 'sign-up'>('sign-in')
 
-  const handleAuth = async (e: React.FormEvent) => {
+  const handleEmailAuth = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (password.length < 6) {
-      toast.error('Password must be at least 6 characters')
-      return
-    }
     setLoading(true)
 
     try {
-      if (isSignUp) {
-        const { data, error } = await supabase.auth.signUp({
+      if (view === 'sign-in') {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+        if (error) throw error
+        toast.success('Signed in successfully!')
+      } else {
+        const { error } = await supabase.auth.signUp({
           email,
           password,
           options: {
             emailRedirectTo: `${window.location.origin}/auth/callback`,
           },
         })
-
         if (error) throw error
-
-        if (data.user?.identities?.length === 0) {
-          toast.error('This email is already registered. Please sign in instead.')
-          setIsSignUp(false)
-          return
-        }
-
-        toast.success('Check your email to confirm your signup!')
-      } else {
-        const { error } = await supabase.auth.signInWithPassword({
-          email,
-          password,
-        })
-
-        if (error) {
-          if (error.message.includes('Email not confirmed')) {
-            toast.error('Please confirm your email first')
-          } else if (error.message.includes('Invalid login credentials')) {
-            toast.error('Invalid email or password')
-          } else {
-            throw error
-          }
-          return
-        }
-
-        toast.success('Successfully logged in!')
+        toast.success('Check your email for the confirmation link!')
       }
     } catch (error: any) {
-      console.error('Auth error:', error)
-      toast.error(error.message || 'An error occurred during authentication')
+      toast.error(error.message)
     } finally {
       setLoading(false)
     }
   }
 
+  const handleGithubAuth = async () => {
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({
+        provider: 'github',
+        options: {
+          redirectTo: `${window.location.origin}/auth/callback`,
+        },
+      })
+      if (error) throw error
+    } catch (error: any) {
+      toast.error(error.message)
+    }
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-gray-50 p-4">
-      <Card className="w-full max-w-md space-y-6 p-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold">{isSignUp ? 'Create Account' : 'Welcome Back'}</h1>
-          <p className="text-sm text-gray-500">
-            {isSignUp ? 'Sign up to get started' : 'Sign in to your account'}
-          </p>
+    <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
+      <div className="flex flex-col space-y-2 text-center">
+        <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
+          <CheckSquare className="h-6 w-6 text-primary" />
         </div>
+        <h1 className="text-2xl font-semibold tracking-tight">
+          {view === 'sign-in' ? 'Welcome back' : 'Create an account'}
+        </h1>
+        <p className="text-sm text-muted-foreground">
+          {view === 'sign-in'
+            ? 'Enter your credentials to sign in to your account'
+            : 'Enter your email below to create your account'}
+        </p>
+      </div>
 
-        <form onSubmit={handleAuth} className="space-y-4">
-          <div className="space-y-2">
-            <Input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-              disabled={loading}
-              className="bg-white"
-            />
-            <Input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-              disabled={loading}
-              className="bg-white"
-              minLength={6}
-            />
-          </div>
-
-          <Button 
-            className="w-full" 
-            type="submit" 
-            disabled={loading}
+      <Tabs value={view} onValueChange={(v) => setView(v as 'sign-in' | 'sign-up')}>
+        <TabsList className="grid w-full grid-cols-2">
+          <TabsTrigger value="sign-in">Sign In</TabsTrigger>
+          <TabsTrigger value="sign-up">Sign Up</TabsTrigger>
+        </TabsList>
+        <TabsContent value="sign-in" className="mt-4">
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
           >
-            {loading ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                {isSignUp ? 'Signing up...' : 'Signing in...'}
-              </>
-            ) : (
-              isSignUp ? 'Sign Up' : 'Sign In'
-            )}
-          </Button>
-        </form>
-
-        <div className="text-center">
-          <button
-            type="button"
-            onClick={() => {
-              setIsSignUp(!isSignUp)
-              setEmail('')
-              setPassword('')
-            }}
-            className="text-sm text-blue-600 hover:underline"
-            disabled={loading}
+            <form onSubmit={handleEmailAuth} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="email"
+                    placeholder="name@example.com"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="pl-10"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="password">Password</Label>
+                  <Button variant="link" className="h-auto p-0 text-xs" type="button">
+                    Forgot password?
+                  </Button>
+                </div>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pl-10"
+                    required
+                  />
+                </div>
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Sign In
+              </Button>
+            </form>
+          </motion.div>
+        </TabsContent>
+        <TabsContent value="sign-up" className="mt-4">
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3 }}
           >
-            {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
-          </button>
+            <form onSubmit={handleEmailAuth} className="space-y-4">
+              <div className="space-y-2">
+                <Label htmlFor="email">Email</Label>
+                <div className="relative">
+                  <Mail className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="email"
+                    placeholder="name@example.com"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    className="pl-10"
+                    required
+                  />
+                </div>
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="password">Password</Label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    id="password"
+                    type="password"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    className="pl-10"
+                    required
+                  />
+                </div>
+              </div>
+              <Button type="submit" className="w-full" disabled={loading}>
+                {loading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+                Create Account
+              </Button>
+            </form>
+          </motion.div>
+        </TabsContent>
+      </Tabs>
+
+      <div className="relative">
+        <div className="absolute inset-0 flex items-center">
+          <Separator className="w-full" />
         </div>
-      </Card>
+        <div className="relative flex justify-center text-xs uppercase">
+          <span className="bg-background px-2 text-muted-foreground">
+            Or continue with
+          </span>
+        </div>
+      </div>
+
+      <Button variant="outline" type="button" onClick={handleGithubAuth} className="w-full">
+        <Github className="mr-2 h-4 w-4" />
+        GitHub
+      </Button>
+
+      <p className="px-8 text-center text-xs text-muted-foreground">
+        By clicking continue, you agree to our{' '}
+        <Button variant="link" className="h-auto p-0 text-xs">
+          Terms of Service
+        </Button>{' '}
+        and{' '}
+        <Button variant="link" className="h-auto p-0 text-xs">
+          Privacy Policy
+        </Button>
+        .
+      </p>
     </div>
   )
 }

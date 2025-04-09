@@ -1,13 +1,13 @@
 
 import { ThemeProvider } from '@/components/theme-provider'
-import { TodoLayout } from '@/components/todo/TodoLayout'
+import { AuthLayout } from '@/components/auth/AuthLayout'
 import { Toaster } from 'sonner'
 
 function App() {
   return (
     <ThemeProvider defaultTheme="system" storageKey="todosaas-theme">
       <Toaster richColors position="top-right" />
-      <TodoLayout />
+      <AuthLayout />
     </ThemeProvider>
   )
 }

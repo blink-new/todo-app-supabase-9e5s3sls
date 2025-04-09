@@ -18,14 +18,22 @@ import { toast } from 'sonner'
 export function Header() {
   const [user, setUser] = useState<any>(null)
   const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     async function getUser() {
       try {
-        const { data: { user } } = await supabase.auth.getUser()
-        setUser(user)
-      } catch (error) {
-        console.error('Error fetching user:', error)
+        const { data, error } = await supabase.auth.getUser()
+        
+        if (error) {
+          console.error('Error fetching user:', error)
+          setError(error.message)
+        } else {
+          setUser(data.user)
+        }
+      } catch (err: any) {
+        console.error('Unexpected error fetching user:', err)
+        setError(err.message || 'Failed to fetch user')
       } finally {
         setLoading(false)
       }
