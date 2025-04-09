@@ -9,9 +9,19 @@ function App() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean | null>(null)
 
   useEffect(() => {
-    supabase.auth.onAuthStateChange((event, session) => {
+    // Check initial auth state
+    supabase.auth.getSession().then(({ data: { session } }) => {
       setIsAuthenticated(!!session)
     })
+
+    // Listen for auth changes
+    const {
+      data: { subscription },
+    } = supabase.auth.onAuthStateChange((_event, session) => {
+      setIsAuthenticated(!!session)
+    })
+
+    return () => subscription.unsubscribe()
   }, [])
 
   if (isAuthenticated === null) {

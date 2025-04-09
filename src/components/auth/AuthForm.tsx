@@ -5,6 +5,7 @@ import { Input } from '@/components/ui/input'
 import { Card } from '@/components/ui/card'
 import { supabase } from '@/lib/supabase'
 import { toast } from 'sonner'
+import { Loader2 } from 'lucide-react'
 
 export function AuthForm() {
   const [email, setEmail] = useState('')
@@ -14,18 +15,53 @@ export function AuthForm() {
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault()
+    if (password.length < 6) {
+      toast.error('Password must be at least 6 characters')
+      return
+    }
     setLoading(true)
 
     try {
-      const { error } = isSignUp 
-        ? await supabase.auth.signUp({ email, password })
-        : await supabase.auth.signInWithPassword({ email, password })
+      if (isSignUp) {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            emailRedirectTo: `${window.location.origin}/auth/callback`,
+          },
+        })
 
-      if (error) throw error
-      
-      toast.success(isSignUp ? 'Check your email to confirm signup!' : 'Successfully logged in!')
-    } catch (error) {
-      toast.error(error.message)
+        if (error) throw error
+
+        if (data.user?.identities?.length === 0) {
+          toast.error('This email is already registered. Please sign in instead.')
+          setIsSignUp(false)
+          return
+        }
+
+        toast.success('Check your email to confirm your signup!')
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({
+          email,
+          password,
+        })
+
+        if (error) {
+          if (error.message.includes('Email not confirmed')) {
+            toast.error('Please confirm your email first')
+          } else if (error.message.includes('Invalid login credentials')) {
+            toast.error('Invalid email or password')
+          } else {
+            throw error
+          }
+          return
+        }
+
+        toast.success('Successfully logged in!')
+      }
+    } catch (error: any) {
+      console.error('Auth error:', error)
+      toast.error(error.message || 'An error occurred during authentication')
     } finally {
       setLoading(false)
     }
@@ -49,6 +85,8 @@ export function AuthForm() {
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               required
+              disabled={loading}
+              className="bg-white"
             />
             <Input
               type="password"
@@ -56,19 +94,38 @@ export function AuthForm() {
               value={password}
               onChange={(e) => setPassword(e.target.value)}
               required
+              disabled={loading}
+              className="bg-white"
+              minLength={6}
             />
           </div>
 
-          <Button className="w-full" type="submit" disabled={loading}>
-            {loading ? 'Loading...' : isSignUp ? 'Sign Up' : 'Sign In'}
+          <Button 
+            className="w-full" 
+            type="submit" 
+            disabled={loading}
+          >
+            {loading ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                {isSignUp ? 'Signing up...' : 'Signing in...'}
+              </>
+            ) : (
+              isSignUp ? 'Sign Up' : 'Sign In'
+            )}
           </Button>
         </form>
 
         <div className="text-center">
           <button
             type="button"
-            onClick={() => setIsSignUp(!isSignUp)}
+            onClick={() => {
+              setIsSignUp(!isSignUp)
+              setEmail('')
+              setPassword('')
+            }}
             className="text-sm text-blue-600 hover:underline"
+            disabled={loading}
           >
             {isSignUp ? 'Already have an account? Sign in' : "Don't have an account? Sign up"}
           </button>

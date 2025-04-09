@@ -15,13 +15,8 @@ import { format } from 'date-fns'
 const CATEGORIES = ['personal', 'work', 'shopping', 'health', 'other'] as const
 type Category = typeof CATEGORIES[number]
 
-type TodoWithMeta = Todo & {
-  category: Category
-  due_date: string | null
-}
-
 export function TodoList() {
-  const [todos, setTodos] = useState<TodoWithMeta[]>([])
+  const [todos, setTodos] = useState<Todo[]>([])
   const [newTodo, setNewTodo] = useState('')
   const [loading, setLoading] = useState(true)
   const [selectedCategory, setSelectedCategory] = useState<Category>('personal')
@@ -58,7 +53,7 @@ export function TodoList() {
 
       if (error) throw error
       setTodos(data || [])
-    } catch (error) {
+    } catch (error: any) {
       toast.error('Error fetching todos')
     } finally {
       setLoading(false)
@@ -86,12 +81,12 @@ export function TodoList() {
       setNewTodo('')
       setSelectedDate(null)
       toast.success('Todo added!')
-    } catch (error) {
+    } catch (error: any) {
       toast.error('Error adding todo')
     }
   }
 
-  const toggleTodo = async (todo: TodoWithMeta) => {
+  const toggleTodo = async (todo: Todo) => {
     try {
       const { error } = await supabase
         .from('todos')
@@ -99,7 +94,7 @@ export function TodoList() {
         .eq('id', todo.id)
 
       if (error) throw error
-    } catch (error) {
+    } catch (error: any) {
       toast.error('Error updating todo')
     }
   }
@@ -113,13 +108,14 @@ export function TodoList() {
 
       if (error) throw error
       toast.success('Todo deleted!')
-    } catch (error) {
+    } catch (error: any) {
       toast.error('Error deleting todo')
     }
   }
 
   const handleSignOut = async () => {
-    await supabase.auth.signOut()
+    const { error } = await supabase.auth.signOut()
+    if (error) toast.error('Error signing out')
   }
 
   const filteredTodos = todos.filter(todo => 
