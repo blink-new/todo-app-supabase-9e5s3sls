@@ -1,5 +1,5 @@
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { supabase } from '@/lib/supabase'
 import { categorizeTodo } from '@/lib/api'
 import type { Todo } from '@/lib/supabase'
@@ -36,6 +36,9 @@ export function TodoList() {
   const [isCategorizing, setIsCategorizing] = useState(false)
   const [useAI, setUseAI] = useState(true)
   const [suggestedCategory, setSuggestedCategory] = useState<Category | null>(null)
+  
+  // Debounce timer reference
+  const debounceTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     fetchTodos()
@@ -87,32 +90,44 @@ export function TodoList() {
     }
   }
 
-  // Preview categorization as user types
-  useEffect(() => {
-    const previewCategory = async () => {
-      if (!newTodo.trim() || !useAI) {
-        setSuggestedCategory(null)
-        return
-      }
-      
-      // Debounce to avoid too many API calls
-      const handler = setTimeout(async () => {
-        setIsCategorizing(true)
-        try {
-          const category = await categorizeTodo(newTodo.trim()) as Category
-          setSuggestedCategory(category)
-        } catch (error) {
-          console.error('Error previewing category:', error)
-          setSuggestedCategory(null)
-        } finally {
-          setIsCategorizing(false)
-        }
-      }, 500) // 500ms debounce
-      
-      return () => clearTimeout(handler)
+  // Properly debounced function to get category suggestions
+  const debouncedGetSuggestion = (todoText: string) => {
+    // Clear any existing timer
+    if (debounceTimerRef.current) {
+      window.clearTimeout(debounceTimerRef.current)
     }
+
+    // Only proceed if we have text and AI is enabled
+    if (!todoText.trim() || !useAI) {
+      setSuggestedCategory(null)
+      return
+    }
+
+    // Set a new timer
+    debounceTimerRef.current = window.setTimeout(async () => {
+      setIsCategorizing(true)
+      try {
+        const category = await categorizeTodo(todoText.trim()) as Category
+        setSuggestedCategory(category)
+      } catch (error) {
+        console.error('Error previewing category:', error)
+        setSuggestedCategory(null)
+      } finally {
+        setIsCategorizing(false)
+      }
+    }, 800) // 800ms debounce
+  }
+
+  // Call debounced function when todo text changes
+  useEffect(() => {
+    debouncedGetSuggestion(newTodo)
     
-    previewCategory()
+    // Cleanup function to clear timer if component unmounts or newTodo changes again
+    return () => {
+      if (debounceTimerRef.current) {
+        window.clearTimeout(debounceTimerRef.current)
+      }
+    }
   }, [newTodo, useAI])
 
   const addTodo = async (e: React.FormEvent) => {
