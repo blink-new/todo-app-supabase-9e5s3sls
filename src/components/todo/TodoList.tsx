@@ -34,7 +34,7 @@ export function TodoList() {
         table: 'todos' 
       }, 
       (payload) => {
-        if (payload.eventType === 'INSERT') {
+        if (payload.eventType === 'INSERT' && !todos.some(t => t.id === payload.new.id)) {
           setTodos(current => [...current, payload.new as Todo])
         } else if (payload.eventType === 'DELETE') {
           setTodos(current => current.filter(todo => todo.id !== payload.old.id))
@@ -81,25 +81,59 @@ export function TodoList() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No user found')
 
-      const { error } = await supabase
-        .from('todos')
-        .insert([{ 
-          title: newTodo.trim(), 
-          user_id: user.id,
-          category: selectedCategory,
-          due_date: selectedDate?.toISOString() || null
-        }])
+      // Create optimistic todo
+      const optimisticTodo: Todo = {
+        id: crypto.randomUUID(), // Temporary ID
+        title: newTodo.trim(),
+        user_id: user.id,
+        category: selectedCategory,
+        due_date: selectedDate?.toISOString() || null,
+        is_complete: false,
+        created_at: new Date().toISOString(),
+      }
 
-      if (error) throw error
+      // Optimistically update UI
+      setTodos(current => [...current, optimisticTodo])
       setNewTodo('')
       setSelectedDate(null)
+
+      // Make API call
+      const { data, error } = await supabase
+        .from('todos')
+        .insert([{ 
+          title: optimisticTodo.title, 
+          user_id: optimisticTodo.user_id,
+          category: optimisticTodo.category,
+          due_date: optimisticTodo.due_date
+        }])
+        .select()
+        .single()
+
+      if (error) throw error
+
+      // Update the temporary ID with the real one
+      setTodos(current => 
+        current.map(todo => 
+          todo.id === optimisticTodo.id ? data : todo
+        )
+      )
+
       toast.success('Todo added!')
     } catch (error: any) {
+      // Revert optimistic update on error
+      setTodos(current => current.filter(todo => todo.id !== optimisticTodo?.id))
       toast.error('Error adding todo')
     }
   }
 
   const toggleTodo = async (todo: Todo) => {
+    // Optimistically update UI
+    setTodos(current =>
+      current.map(t =>
+        t.id === todo.id ? { ...t, is_complete: !t.is_complete } : t
+      )
+    )
+
     try {
       const { error } = await supabase
         .from('todos')
@@ -108,11 +142,23 @@ export function TodoList() {
 
       if (error) throw error
     } catch (error: any) {
+      // Revert optimistic update on error
+      setTodos(current =>
+        current.map(t =>
+          t.id === todo.id ? { ...t, is_complete: todo.is_complete } : t
+        )
+      )
       toast.error('Error updating todo')
     }
   }
 
   const deleteTodo = async (id: string) => {
+    // Store the todo for potential recovery
+    const todoToDelete = todos.find(t => t.id === id)
+    
+    // Optimistically update UI
+    setTodos(current => current.filter(todo => todo.id !== id))
+
     try {
       const { error } = await supabase
         .from('todos')
@@ -122,6 +168,10 @@ export function TodoList() {
       if (error) throw error
       toast.success('Todo deleted!')
     } catch (error: any) {
+      // Revert optimistic update on error
+      if (todoToDelete) {
+        setTodos(current => [...current, todoToDelete])
+      }
       toast.error('Error deleting todo')
     }
   }
