@@ -1,6 +1,7 @@
 
 import { useState, useEffect } from 'react'
 import { supabase } from '@/lib/supabase'
+import { categorizeTodo } from '@/lib/api'
 import type { Todo } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
@@ -9,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { toast } from 'sonner'
-import { Loader2, Trash2, Calendar as CalendarIcon, Filter } from 'lucide-react'
+import { Loader2, Trash2, Calendar as CalendarIcon, Filter, Sparkles } from 'lucide-react'
 import { format } from 'date-fns'
 
 const CATEGORIES = ['personal', 'work', 'shopping', 'health', 'other'] as const
@@ -22,6 +23,8 @@ export function TodoList() {
   const [selectedCategory, setSelectedCategory] = useState<Category>('personal')
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [filterCategory, setFilterCategory] = useState<Category | 'all'>('all')
+  const [isCategorizing, setIsCategorizing] = useState(false)
+  const [useAI, setUseAI] = useState(true)
 
   useEffect(() => {
     fetchTodos()
@@ -81,12 +84,27 @@ export function TodoList() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No user found')
 
+      let category = selectedCategory
+      
+      // Use AI to categorize if enabled
+      if (useAI) {
+        setIsCategorizing(true)
+        try {
+          category = await categorizeTodo(newTodo.trim()) as Category
+        } catch (error) {
+          console.error('Error categorizing:', error)
+          // Fall back to selected category if AI fails
+        } finally {
+          setIsCategorizing(false)
+        }
+      }
+
       // Create optimistic todo
       const optimisticTodo: Todo = {
         id: crypto.randomUUID(), // Temporary ID
         title: newTodo.trim(),
         user_id: user.id,
-        category: selectedCategory,
+        category,
         due_date: selectedDate?.toISOString() || null,
         is_complete: false,
         created_at: new Date().toISOString(),
@@ -118,7 +136,11 @@ export function TodoList() {
         )
       )
 
-      toast.success('Todo added!')
+      if (useAI) {
+        toast.success(`Todo added! AI categorized as: ${category}`)
+      } else {
+        toast.success('Todo added!')
+      }
     } catch (error: any) {
       // Revert optimistic update on error
       setTodos(current => current.filter(todo => todo.id !== optimisticTodo?.id))
@@ -207,23 +229,41 @@ export function TodoList() {
             onChange={(e) => setNewTodo(e.target.value)}
             placeholder="Add a new todo..."
             className="flex-1"
+            disabled={isCategorizing}
           />
-          <Button type="submit">Add</Button>
+          <Button type="submit" disabled={isCategorizing || !newTodo.trim()}>
+            {isCategorizing ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Add'}
+          </Button>
         </div>
 
-        <div className="flex gap-2">
-          <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as Category)}>
-            <SelectTrigger className="w-[180px]">
-              <SelectValue placeholder="Category" />
-            </SelectTrigger>
-            <SelectContent>
-              {CATEGORIES.map(category => (
-                <SelectItem key={category} value={category} className="capitalize">
-                  {category}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="flex flex-wrap gap-2">
+          <div className="flex items-center">
+            <Button
+              type="button"
+              variant={useAI ? "default" : "outline"}
+              size="sm"
+              className="flex items-center gap-1"
+              onClick={() => setUseAI(!useAI)}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {useAI ? 'AI Categorization On' : 'AI Categorization Off'}
+            </Button>
+          </div>
+
+          {!useAI && (
+            <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as Category)}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Category" />
+              </SelectTrigger>
+              <SelectContent>
+                {CATEGORIES.map(category => (
+                  <SelectItem key={category} value={category} className="capitalize">
+                    {category}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
 
           <Popover>
             <PopoverTrigger asChild>
