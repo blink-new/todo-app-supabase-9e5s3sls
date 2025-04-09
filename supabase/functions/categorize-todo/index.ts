@@ -15,6 +15,40 @@ serve(async (req) => {
   }
 
   try {
+    // Get the authorization header
+    const authHeader = req.headers.get('Authorization')
+    
+    // Create a Supabase client with the Auth context of the function
+    const supabaseClient = createClient(
+      Deno.env.get('SUPABASE_URL') ?? '',
+      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
+      { 
+        global: { 
+          headers: { 
+            Authorization: authHeader || '' 
+          } 
+        } 
+      }
+    )
+    
+    // Verify the user is authenticated
+    const {
+      data: { user },
+      error: userError,
+    } = await supabaseClient.auth.getUser()
+
+    // If JWT verification is enabled but no user was found, return 401
+    if (!user && Deno.env.get('SUPABASE_FUNCTION_VERIFY_JWT') === 'true') {
+      return new Response(
+        JSON.stringify({ error: 'Unauthorized', message: 'User is not authenticated' }),
+        { 
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' }, 
+          status: 401 
+        }
+      )
+    }
+
+    // Parse the request body
     const { title } = await req.json()
 
     if (!title) {
@@ -23,13 +57,6 @@ serve(async (req) => {
         { headers: { ...corsHeaders, 'Content-Type': 'application/json' }, status: 400 }
       )
     }
-
-    // Create a Supabase client with the Auth context of the function
-    const supabaseClient = createClient(
-      Deno.env.get('SUPABASE_URL') ?? '',
-      Deno.env.get('SUPABASE_ANON_KEY') ?? '',
-      { global: { headers: { Authorization: req.headers.get('Authorization')! } } }
-    )
 
     // Initialize OpenAI
     const openai = new OpenAI({
