@@ -65,15 +65,17 @@ export function AuthLayout() {
 
   if (error) {
     return (
-      <div className="container flex min-h-screen flex-col items-center justify-center">
-        <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="w-full max-w-md mx-auto px-4">
           <div className="flex flex-col space-y-2 text-center">
             <h1 className="text-2xl font-semibold tracking-tight text-red-600">Authentication Error</h1>
             <p className="text-sm text-muted-foreground">
               There was a problem connecting to the authentication service. Please try again.
             </p>
           </div>
-          <AuthForm />
+          <div className="mt-6">
+            <AuthForm />
+          </div>
         </div>
       </div>
     )
@@ -82,8 +84,10 @@ export function AuthLayout() {
   return session ? (
     <TodoLayout />
   ) : (
-    <div className="container flex min-h-screen flex-col items-center justify-center">
-      <AuthForm />
+    <div className="flex min-h-screen items-center justify-center">
+      <div className="w-full max-w-md mx-auto px-4">
+        <AuthForm />
+      </div>
     </div>
   )
 }

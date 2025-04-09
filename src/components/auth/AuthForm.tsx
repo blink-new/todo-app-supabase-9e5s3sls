@@ -61,7 +61,7 @@ export function AuthForm() {
   }
 
   return (
-    <div className="mx-auto flex w-full flex-col justify-center space-y-6 sm:w-[350px]">
+    <div className="w-full max-w-[350px] mx-auto flex flex-col justify-center space-y-6">
       <div className="flex flex-col space-y-2 text-center">
         <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
           <CheckSquare className="h-6 w-6 text-primary" />
@@ -190,7 +190,7 @@ export function AuthForm() {
         GitHub
       </Button>
 
-      <p className="px-8 text-center text-xs text-muted-foreground">
+      <p className="text-center text-xs text-muted-foreground">
         By clicking continue, you agree to our{' '}
         <Button variant="link" className="h-auto p-0 text-xs">
           Terms of Service
