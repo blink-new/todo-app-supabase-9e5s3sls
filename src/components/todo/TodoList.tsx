@@ -10,7 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { toast } from 'sonner'
-import { Loader2, Trash2, Calendar as CalendarIcon, Filter, Sparkles, Tag, Clock } from 'lucide-react'
+import { Loader2, Trash2, Calendar as CalendarIcon, Filter, Sparkles, Tag, Clock, ArrowUpDown, ArrowDown, ArrowUp } from 'lucide-react'
 import { format } from 'date-fns'
 import { Badge } from '@/components/ui/badge'
 
@@ -24,6 +24,9 @@ const TIME_ESTIMATES = [
   '6hrs', '8hrs', '1day', '2days', '3days', '1week'
 ] as const
 type TimeEstimate = typeof TIME_ESTIMATES[number]
+
+// Sort options
+type SortOrder = 'created_asc' | 'created_desc' | 'due_asc' | 'due_desc'
 
 // Category colors for visual distinction
 const CATEGORY_COLORS: Record<Category, string> = {
@@ -55,6 +58,7 @@ export function TodoList() {
   const [selectedDate, setSelectedDate] = useState<Date | null>(null)
   const [selectedTimeEstimate, setSelectedTimeEstimate] = useState<TimeEstimate>('30min')
   const [filterCategory, setFilterCategory] = useState<Category | 'all'>('all')
+  const [sortOrder, setSortOrder] = useState<SortOrder>('created_desc')
   const [isCategorizing, setIsCategorizing] = useState(false)
   const [isEstimating, setIsEstimating] = useState(false)
   const [useAI, setUseAI] = useState(true)
@@ -100,11 +104,23 @@ export function TodoList() {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) return
 
-      const { data, error } = await supabase
+      let query = supabase
         .from('todos')
         .select('*')
         .eq('user_id', user.id)
-        .order('due_date', { ascending: true, nullsLast: true })
+      
+      // Apply sorting based on current sort order
+      if (sortOrder === 'created_asc') {
+        query = query.order('created_at', { ascending: true })
+      } else if (sortOrder === 'created_desc') {
+        query = query.order('created_at', { ascending: false })
+      } else if (sortOrder === 'due_asc') {
+        query = query.order('due_date', { ascending: true, nullsLast: true })
+      } else if (sortOrder === 'due_desc') {
+        query = query.order('due_date', { ascending: false, nullsFirst: true })
+      }
+
+      const { data, error } = await query
 
       if (error) throw error
       setTodos(data || [])
@@ -114,6 +130,13 @@ export function TodoList() {
       setLoading(false)
     }
   }
+
+  // Refetch todos when sort order changes
+  useEffect(() => {
+    if (!loading) {
+      fetchTodos()
+    }
+  }, [sortOrder])
 
   // Properly debounced function to get category suggestions
   const debouncedGetSuggestion = (todoText: string) => {
@@ -352,6 +375,18 @@ export function TodoList() {
     filterCategory === 'all' || todo.category === filterCategory
   )
 
+  // Get sort icon based on current sort order
+  const getSortIcon = () => {
+    if (sortOrder === 'created_asc') return <ArrowUp className="h-4 w-4" />
+    if (sortOrder === 'created_desc') return <ArrowDown className="h-4 w-4" />
+    return <ArrowUpDown className="h-4 w-4" />
+  }
+
+  // Toggle sort order between created_asc and created_desc
+  const toggleSortOrder = () => {
+    setSortOrder(sortOrder === 'created_asc' ? 'created_desc' : 'created_asc')
+  }
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -466,21 +501,46 @@ export function TodoList() {
         </div>
       </form>
 
-      <div className="mb-4 flex items-center gap-2">
-        <Filter className="h-4 w-4 text-gray-500" />
-        <Select value={filterCategory} onValueChange={(value) => setFilterCategory(value as Category | 'all')}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Filter by category" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">All categories</SelectItem>
-            {CATEGORIES.map(category => (
-              <SelectItem key={category} value={category} className="capitalize">
-                {category}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      <div className="mb-4 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <Filter className="h-4 w-4 text-gray-500" />
+          <Select value={filterCategory} onValueChange={(value) => setFilterCategory(value as Category | 'all')}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Filter by category" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All categories</SelectItem>
+              {CATEGORIES.map(category => (
+                <SelectItem key={category} value={category} className="capitalize">
+                  {category}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <Select value={sortOrder} onValueChange={(value) => setSortOrder(value as SortOrder)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Sort by" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="created_desc">Newest first</SelectItem>
+              <SelectItem value="created_asc">Oldest first</SelectItem>
+              <SelectItem value="due_asc">Due date (ascending)</SelectItem>
+              <SelectItem value="due_desc">Due date (descending)</SelectItem>
+            </SelectContent>
+          </Select>
+          
+          <Button 
+            variant="outline" 
+            size="icon" 
+            onClick={toggleSortOrder}
+            title={sortOrder === 'created_asc' ? 'Sort newest first' : 'Sort oldest first'}
+          >
+            {getSortIcon()}
+          </Button>
+        </div>
       </div>
 
       <div className="space-y-2">
@@ -515,6 +575,9 @@ export function TodoList() {
                         {format(new Date(todo.due_date), 'PPP')}
                       </span>
                     )}
+                    <span className="text-xs text-gray-400">
+                      Created: {format(new Date(todo.created_at), 'MMM d, yyyy')}
+                    </span>
                   </div>
                 </div>
               </div>
