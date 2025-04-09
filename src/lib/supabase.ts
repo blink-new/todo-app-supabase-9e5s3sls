@@ -16,7 +16,10 @@ export type Todo = {
   title: string
   is_complete: boolean
   category: 'personal' | 'work' | 'shopping' | 'health' | 'other'
+  time_estimate?: '5min' | '10min' | '15min' | '20min' | '30min' | '45min' | 
+                  '1hr' | '1.5hrs' | '2hrs' | '2.5hrs' | '3hrs' | '4hrs' | '5hrs' | 
+                  '6hrs' | '8hrs' | '1day' | '2days' | '3days' | '1week'
   due_date: string | null
   created_at: string
-  updated_at: string
+  updated_at?: string
 }
