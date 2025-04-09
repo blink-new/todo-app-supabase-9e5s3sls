@@ -191,6 +191,9 @@ export function TodoList() {
     e.preventDefault()
     if (!newTodo.trim()) return
 
+    // Define optimisticTodo outside the try block so it's accessible in the catch block
+    let optimisticTodo: Todo | null = null
+
     try {
       const { data: { user } } = await supabase.auth.getUser()
       if (!user) throw new Error('No user found')
@@ -235,7 +238,7 @@ export function TodoList() {
       }
 
       // Create optimistic todo
-      const optimisticTodo: Todo = {
+      optimisticTodo = {
         id: crypto.randomUUID(), // Temporary ID
         title: newTodo.trim(),
         user_id: user.id,
@@ -247,7 +250,7 @@ export function TodoList() {
       }
 
       // Optimistically update UI
-      setTodos(current => [...current, optimisticTodo])
+      setTodos(current => [...current, optimisticTodo!])
       setNewTodo('')
       setSelectedDate(null)
       setSuggestedCategory(null)
@@ -271,7 +274,7 @@ export function TodoList() {
       // Update the temporary ID with the real one
       setTodos(current => 
         current.map(todo => 
-          todo.id === optimisticTodo.id ? data : todo
+          todo.id === optimisticTodo!.id ? data : todo
         )
       )
 
@@ -282,7 +285,9 @@ export function TodoList() {
       }
     } catch (error: any) {
       // Revert optimistic update on error
-      setTodos(current => current.filter(todo => todo.id !== optimisticTodo?.id))
+      if (optimisticTodo) {
+        setTodos(current => current.filter(todo => todo.id !== optimisticTodo?.id))
+      }
       toast.error('Error adding todo')
     }
   }
