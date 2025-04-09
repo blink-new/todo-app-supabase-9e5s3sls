@@ -5,18 +5,32 @@ import type { Todo } from '@/lib/supabase'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Calendar } from '@/components/ui/calendar'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { toast } from 'sonner'
-import { Loader2, Trash2 } from 'lucide-react'
+import { Loader2, Trash2, Calendar as CalendarIcon, Filter } from 'lucide-react'
+import { format } from 'date-fns'
+
+const CATEGORIES = ['personal', 'work', 'shopping', 'health', 'other'] as const
+type Category = typeof CATEGORIES[number]
+
+type TodoWithMeta = Todo & {
+  category: Category
+  due_date: string | null
+}
 
 export function TodoList() {
-  const [todos, setTodos] = useState<Todo[]>([])
+  const [todos, setTodos] = useState<TodoWithMeta[]>([])
   const [newTodo, setNewTodo] = useState('')
   const [loading, setLoading] = useState(true)
+  const [selectedCategory, setSelectedCategory] = useState<Category>('personal')
+  const [selectedDate, setSelectedDate] = useState<Date | null>(null)
+  const [filterCategory, setFilterCategory] = useState<Category | 'all'>('all')
 
   useEffect(() => {
     fetchTodos()
     
-    // Set up real-time subscription
     const subscription = supabase
       .channel('todos')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, 
@@ -40,7 +54,7 @@ export function TodoList() {
         .from('todos')
         .select('*')
         .eq('user_id', user.id)
-        .order('created_at', { ascending: false })
+        .order('due_date', { ascending: true, nullsLast: true })
 
       if (error) throw error
       setTodos(data || [])
@@ -61,19 +75,23 @@ export function TodoList() {
 
       const { error } = await supabase
         .from('todos')
-        .insert([
-          { title: newTodo.trim(), user_id: user.id }
-        ])
+        .insert([{ 
+          title: newTodo.trim(), 
+          user_id: user.id,
+          category: selectedCategory,
+          due_date: selectedDate?.toISOString() || null
+        }])
 
       if (error) throw error
       setNewTodo('')
+      setSelectedDate(null)
       toast.success('Todo added!')
     } catch (error) {
       toast.error('Error adding todo')
     }
   }
 
-  const toggleTodo = async (todo: Todo) => {
+  const toggleTodo = async (todo: TodoWithMeta) => {
     try {
       const { error } = await supabase
         .from('todos')
@@ -104,6 +122,10 @@ export function TodoList() {
     await supabase.auth.signOut()
   }
 
+  const filteredTodos = todos.filter(todo => 
+    filterCategory === 'all' || todo.category === filterCategory
+  )
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -119,21 +141,72 @@ export function TodoList() {
         <Button variant="outline" onClick={handleSignOut}>Sign Out</Button>
       </div>
 
-      <form onSubmit={addTodo} className="mb-6 flex gap-2">
-        <Input
-          value={newTodo}
-          onChange={(e) => setNewTodo(e.target.value)}
-          placeholder="Add a new todo..."
-          className="flex-1"
-        />
-        <Button type="submit">Add</Button>
+      <form onSubmit={addTodo} className="mb-6 space-y-4 rounded-lg border p-4 shadow-sm">
+        <div className="flex gap-2">
+          <Input
+            value={newTodo}
+            onChange={(e) => setNewTodo(e.target.value)}
+            placeholder="Add a new todo..."
+            className="flex-1"
+          />
+          <Button type="submit">Add</Button>
+        </div>
+
+        <div className="flex gap-2">
+          <Select value={selectedCategory} onValueChange={(value) => setSelectedCategory(value as Category)}>
+            <SelectTrigger className="w-[180px]">
+              <SelectValue placeholder="Category" />
+            </SelectTrigger>
+            <SelectContent>
+              {CATEGORIES.map(category => (
+                <SelectItem key={category} value={category} className="capitalize">
+                  {category}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button variant="outline" className={selectedDate ? 'text-foreground' : 'text-muted-foreground'}>
+                <CalendarIcon className="mr-2 h-4 w-4" />
+                {selectedDate ? format(selectedDate, 'PPP') : 'Pick a due date'}
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-auto p-0">
+              <Calendar
+                mode="single"
+                selected={selectedDate}
+                onSelect={setSelectedDate}
+                initialFocus
+              />
+            </PopoverContent>
+          </Popover>
+        </div>
       </form>
 
+      <div className="mb-4 flex items-center gap-2">
+        <Filter className="h-4 w-4 text-gray-500" />
+        <Select value={filterCategory} onValueChange={(value) => setFilterCategory(value as Category | 'all')}>
+          <SelectTrigger className="w-[180px]">
+            <SelectValue placeholder="Filter by category" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All categories</SelectItem>
+            {CATEGORIES.map(category => (
+              <SelectItem key={category} value={category} className="capitalize">
+                {category}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+
       <div className="space-y-2">
-        {todos.length === 0 ? (
+        {filteredTodos.length === 0 ? (
           <p className="text-center text-gray-500">No todos yet. Add one above!</p>
         ) : (
-          todos.map((todo) => (
+          filteredTodos.map((todo) => (
             <div
               key={todo.id}
               className="flex items-center justify-between rounded-lg border p-4 transition-all hover:shadow-sm"
@@ -143,9 +216,20 @@ export function TodoList() {
                   checked={todo.is_complete}
                   onCheckedChange={() => toggleTodo(todo)}
                 />
-                <span className={todo.is_complete ? 'text-gray-400 line-through' : ''}>
-                  {todo.title}
-                </span>
+                <div className="flex flex-col">
+                  <span className={todo.is_complete ? 'text-gray-400 line-through' : ''}>
+                    {todo.title}
+                  </span>
+                  <div className="flex items-center gap-2 text-sm text-gray-500">
+                    <span className="capitalize">{todo.category}</span>
+                    {todo.due_date && (
+                      <>
+                        <span>•</span>
+                        <span>{format(new Date(todo.due_date), 'PPP')}</span>
+                      </>
+                    )}
+                  </div>
+                </div>
               </div>
               <Button
                 variant="ghost"

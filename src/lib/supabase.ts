@@ -21,4 +21,6 @@ export type Todo = {
   title: string
   is_complete: boolean
   created_at: string
+  category: 'personal' | 'work' | 'shopping' | 'health' | 'other'
+  due_date: string | null
 }
