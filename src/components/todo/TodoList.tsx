@@ -28,11 +28,24 @@ export function TodoList() {
     
     const subscription = supabase
       .channel('todos')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'todos' }, 
-        () => {
-          fetchTodos()
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'todos' 
+      }, 
+      (payload) => {
+        if (payload.eventType === 'INSERT') {
+          setTodos(current => [...current, payload.new as Todo])
+        } else if (payload.eventType === 'DELETE') {
+          setTodos(current => current.filter(todo => todo.id !== payload.old.id))
+        } else if (payload.eventType === 'UPDATE') {
+          setTodos(current => 
+            current.map(todo => 
+              todo.id === payload.new.id ? { ...todo, ...payload.new } : todo
+            )
+          )
         }
-      )
+      })
       .subscribe()
 
     return () => {
