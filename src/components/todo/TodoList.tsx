@@ -256,16 +256,16 @@ export function TodoList() {
       setSuggestedCategory(null)
       setSuggestedTimeEstimate(null)
 
-      // Make API call
+      // Make API call - using insert directly without specifying columns
       const { data, error } = await supabase
         .from('todos')
-        .insert([{ 
+        .insert({ 
           title: optimisticTodo.title, 
           user_id: optimisticTodo.user_id,
           category: optimisticTodo.category,
           time_estimate: optimisticTodo.time_estimate,
           due_date: optimisticTodo.due_date
-        }])
+        })
         .select()
         .single()
 
@@ -284,11 +284,12 @@ export function TodoList() {
         toast.success('Todo added!')
       }
     } catch (error: any) {
+      console.error('Error adding todo:', error)
       // Revert optimistic update on error
       if (optimisticTodo) {
         setTodos(current => current.filter(todo => todo.id !== optimisticTodo?.id))
       }
-      toast.error('Error adding todo')
+      toast.error(`Error adding todo: ${error.message}`)
     }
   }
 
